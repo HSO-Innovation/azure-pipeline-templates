@@ -1,0 +1,51 @@
+parameters:
+  ceConnectionString: ''
+  componentSolutions: []
+  
+steps:
+    
+    # depends on prepare.yml to be run first
+
+  - task: HSOToolInstaller@1
+    displayName: Install HSO Toolkit
+
+  - ${{ each compSolution in parameters.componentSolutions }}:
+    
+    - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMSetVersion.MSCRMSetVersion@12
+      displayName: 'Set Version - ${{ compSolution }}'
+      inputs:
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        solutionName: '${{ compSolution }}'
+        versionNumber: '$(Build.BuildNumber)'
+      timeoutInMinutes: 1
+
+    - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMExportSolution.MSCRMExportSolution@12
+      displayName: 'Export solution: ${{ compSolution }}'
+      inputs:
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        solutionName: '${{ compSolution }}'
+        exportManaged: true
+        exportUnmanaged: false
+        crmConnectionTimeout: 120
+      timeoutInMinutes: 15
+
+    - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMExtractSolution.MSCRMExtractSolution@12
+      displayName: 'Extract solution: ${{ compSolution }}'
+      inputs:
+        unpackedFilesFolder: '$(Build.BinariesDirectory)/Solutions/${{ compSolution }}'
+        packageType: Managed
+        solutionFile: '$(Build.BinariesDirectory)/${{ compSolution }}_managed.zip'
+        localize: false
+
+    - task: HSONNAddSolutionPostfix@1
+      displayName: Add postfix to solution name
+      inputs:
+        solutionRoot: '$(Build.BinariesDirectory)/Solutions/${{ compSolution }}'
+
+    - task: MSCRMPackSolution@12
+      displayName: 'Pack solution ${{ compSolution }}'
+      inputs:
+        crmSdkVersion: '9.0.0'
+        unpackedFilesFolder: '$(Build.BinariesDirectory)/Solutions/${{ compSolution }}'
+        packageType: 'Managed'
+        outputPath: '$(Build.ArtifactStagingDirectory)\solutions'

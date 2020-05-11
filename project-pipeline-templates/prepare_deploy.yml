@@ -1,0 +1,48 @@
+parameters:
+  ceConnectionString: ''
+  configDirectory: ''
+
+steps:
+  - download: none
+  
+  - template: prepare.yml
+    parameters:
+      ceConnectionString: '${{ parameters.ceConnectionString }}'
+      publishCustom: false
+
+  - task: DownloadBuildArtifacts@0
+    displayName: 'Download Config Artifact'
+    inputs:
+      buildType: 'specific'
+      project: '$(System.TeamProjectId)'
+      pipeline: '6'
+      buildVersionToDownload: 'latestFromBranch'
+      branchName: '$(Build.SourceBranch)'
+      downloadType: 'single'
+      downloadPath: '$(Pipeline.Workspace)'
+      artifactName: 'config'
+
+  - task: DownloadBuildArtifacts@0
+    displayName: 'Download Managed Solution Artifact'
+    inputs:
+      buildType: 'specific'
+      project: '$(System.TeamProjectId)'
+      pipeline: '7'
+      buildVersionToDownload: 'latestFromBranch'
+      branchName: '$(Build.SourceBranch)'
+      downloadType: 'single'
+      downloadPath: '$(Pipeline.Workspace)'
+      artifactName: 'Solutions'
+
+  - task: HSOToolInstaller@1
+    displayName: Install HSO Toolkit
+
+  - task: HSONNGetDeploymentVariables@1
+    displayName: Get Deployment variables
+    inputs:
+      jsonFilePath: '${{ parameters.configDirectory }}\DeploymentVariables.json'
+
+  - task: HSONNCheckRunningSolutionImports@1
+    displayName: Check for running imports
+    inputs:
+      connectionString: '${{ parameters.ceConnectionString }}'

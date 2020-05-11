@@ -1,0 +1,318 @@
+parameters:
+  environments: []
+
+stages:
+
+- ${{ each environment in parameters.environments }}:
+
+  - stage: Deploy${{ environment.stagename }}
+    displayName: Deploy to ${{ environment.stagename }}
+    condition: succeeded()
+    variables:
+    - group: UIBT D365CE - ${{ environment.prefix }}
+
+    jobs:
+    - deployment: pre_deploy_job
+      displayName: Pre deployment steps
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:
+
+              - template: prepare.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  publishCustom: false
+
+              - task: DownloadBuildArtifacts@0
+                displayName: 'Download Config Artifact'
+                inputs:
+                  buildType: 'specific'
+                  project: '$(System.TeamProjectId)'
+                  pipeline: '6'
+                  buildVersionToDownload: 'latestFromBranch'
+                  branchName: '$(Build.SourceBranch)'
+                  downloadType: 'single'
+                  downloadPath: '$(Pipeline.Workspace)'
+                  artifactName: 'config'
+
+              - task: HSOToolInstaller@1
+                displayName: Install HSO Toolkit
+
+              - task: HSONNRunConversionScripts@0
+                displayName: Run pre deploy conversion scripts
+                inputs:
+                  conversionJsonPath: '$(Pipeline.Workspace)/config/PreImportConversions.json'
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  queryDirectory: '$(Pipeline.Workspace)/config'
+
+    - deployment: third_party_job
+      displayName: '3rd party solutions'
+      dependsOn: pre_deploy_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:
+
+              - template: prepare_deploy.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  configDirectory: '$(Pipeline.Workspace)\solutions\config'
+
+              - task: HSONNGetDeploymentVariables@1
+                displayName: Get Deployment variables
+                inputs:
+                  jsonFilePath: '$(Pipeline.Workspace)\config\ThirdPartySolutions.json'
+
+              - template: import_solutions.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  checkDir: false
+                  applyUpgrade: true
+                  ceSolutions:
+                    - name: North52BPA_1_0_0_596_managed_2013_2015_2016_Dyn365
+                      path: $(Pipeline.Workspace)/Solutions/thirdPartySolutions
+                      run: eq(variables.N52_BPA, 'true')
+                    - name: North52QuickButton_4_6_managed
+                      path: $(Pipeline.Workspace)/Solutions/thirdPartySolutions
+                      run: eq(variables.N52_QuickButton, 'true')
+                    - name: North52QuickRibbon_1_4_managed
+                      path: $(Pipeline.Workspace)/Solutions/thirdPartySolutions
+                      run: eq(variables.N52_QuickRibbon, 'true')
+                    - name: PSAToFinOpsPackageDeployer
+                      path: $(Pipeline.Workspace)/Solutions/thirdPartySolutions
+                      run: eq(variables.PSAToFinOps, 'true')
+
+    - deployment: import_job
+      displayName: 'Import solutions'
+      dependsOn: third_party_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:
+              - template: prepare_deploy.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  configDirectory: '$(Pipeline.Workspace)\solutions\config'
+
+              - task: HSONNSetSolutionImportVariables@1
+                displayName: Set import variables
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  solutionType: Import
+                  solutionConfigFileLocation: '$(Pipeline.Workspace)\solutions\config\SolutionConfig.json'
+                  releaseName: $(ReleaseName)
+                  sprint: $(SprintNr)
+
+              - template: import_solutions.yml              
+                parameters:                  
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  checkDir: false
+                  applyUpgrade: false
+                  ceSolutions: # todo: add component solutions here
+                    - name: HSOUIBTMaster_V$(Postfix)_managed
+                      path: $(Pipeline.Workspace)/Solutions/solutions
+                      run: eq(variables.HSOUIBTMaster, 'true')
+
+    - deployment: apply_job
+      displayName: Apply solutions
+      dependsOn: import_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:
+
+              - template: prepare_deploy.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  configDirectory: '$(Pipeline.Workspace)\solutions\config'
+
+              - task: HSONNSetSolutionImportVariables@1
+                displayName: Set apply variables
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  solutionType: 'Apply'
+                  solutionConfigFileLocation: '$(Pipeline.Workspace)\solutions\config\SolutionConfig.json'
+                  releaseName: '$(ReleaseName)'
+                  sprint: '$(SprintNr)'
+
+              - template: apply_solutions.yml              
+                parameters:                  
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  ceSolutions: # todo: add component solutions here
+                    - name: 'HSOUIBTMaster_V$(Postfix)_managed'
+                      run: eq(variables.HSOUIBTMaster, 'true')
+
+    - deployment: delete_job
+      displayName: 'Delete solutions'
+      dependsOn: apply_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps: 
+            
+              - template: prepare_deploy.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  configDirectory: '$(Pipeline.Workspace)\solutions\config'
+
+              - task: HSONNSetSolutionImportVariables@1
+                displayName: Set delete variables
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  solutionType: 'Delete'
+                  solutionConfigFileLocation: '$(Pipeline.Workspace)\solutions\config\SolutionConfig.json'
+                  releaseName: '$(ReleaseName)'
+                  sprint: '$(SprintNr)'
+
+              - template: delete_solutions.yml              
+                parameters:                  
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  ceSolutions: # todo: add component solutions here
+                    - name: 'HSOUIBTMaster'
+                      run: ne(variables.HSOUIBTMaster, '')
+
+    - deployment: post_deploy_job
+      displayName: 'Post deployment steps'
+      dependsOn: apply_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:   
+              - download: none
+
+              - template: prepare.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  publishCustom: false
+
+              - task: DownloadBuildArtifacts@0
+                displayName: 'Download Config Artifact'
+                inputs:
+                  buildType: 'specific'
+                  project: '$(System.TeamProjectId)'
+                  pipeline: '6'
+                  buildVersionToDownload: 'latestFromBranch'
+                  branchName: '$(Build.SourceBranch)'
+                  downloadType: 'single'
+                  downloadPath: '$(Pipeline.Workspace)'
+                  artifactName: 'config'
+
+              - task: HSOToolInstaller@1
+                displayName: Install HSO Toolkit
+
+              - task: HSONNCheckWorkflows@1
+                displayName: Check workflows
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  workflowJsonPath: '$(Pipeline.Workspace)/config/WorkflowsToCheck.json'
+                  errorMethod: 'Warn'
+
+              - task: HSONNCleanupRecords@1
+                displayName: Cleanup records
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  cleanupJsonPath: '$(Pipeline.Workspace)/config/CleanUp.json'
+                  queryDirectory: '$(Pipeline.Workspace)/config'
+
+              - task: HSONNSetSystemSettings@1
+                displayName: Set system settings
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  settingsJsonPath: '$(Pipeline.Workspace)/config/SystemSettings.json'
+
+              # task depends on local customizations
+
+              # - task: HSONNUpdateUserProfiles@1
+              #   displayName: Update user profiles
+              #   inputs:
+              #     connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+              #     userConfig: '$(Pipeline.Workspace)/config/UserProfiles.json'
+
+              - task: HSONNInvokeOnDemandWorkflows@1
+                displayName: Run workflows
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  workflowJsonPath: '$(Pipeline.Workspace)/config/OnDemandWorkflows.json'
+                  workflowQueryDirectory: '$(Pipeline.Workspace)/config'
+                  batchSize: '1000'
+
+              - task: HSONNRunConversionScripts@0
+                displayName: Run post deploy conversion scripts
+                inputs:
+                  conversionJsonPath: '$(Pipeline.Workspace)/config/PostImportConversions.json'
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  queryDirectory: '$(Pipeline.Workspace)/config'
+                      
+
+    - deployment: ref_data_job
+      displayName: 'Import reference data'
+      dependsOn: post_deploy_job
+      pool:
+        vmImage: 'windows-latest'
+      environment: ${{ environment.name }}
+      strategy:
+       runOnce:
+         deploy:
+           steps:
+              - download: none
+
+              - template: prepare.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  publishCustom: false
+
+              - task: DownloadBuildArtifacts@0
+                displayName: 'Download Config Artifact'
+                inputs:
+                  buildType: 'specific'
+                  project: '$(System.TeamProjectId)'
+                  pipeline: '6'
+                  buildVersionToDownload: 'latestFromBranch'
+                  branchName: '$(Build.SourceBranch)'
+                  downloadType: 'single'
+                  downloadPath: '$(Pipeline.Workspace)'
+                  artifactName: 'config'                
+
+              - task: DownloadBuildArtifacts@0
+                displayName: 'Download Data Artifact'
+                inputs:
+                  buildType: 'specific'
+                  project: '$(System.TeamProjectId)'
+                  pipeline: '5'
+                  buildVersionToDownload: 'latestFromBranch'
+                  branchName: '$(Build.SourceBranch)'
+                  downloadType: 'single'
+                  downloadPath: '$(Pipeline.Workspace)'
+                  artifactName: 'export'  
+
+              - template: import_data.yml
+                parameters:
+                  ceConnectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  importFile: $(Pipeline.Workspace)\export\Export\uibt-ce-export.xlsx
+                  importConfigFile:  $(Pipeline.Workspace)\export\Config\ReferenceData.json    
+
+              - task: HSONNCleanupRecords@1
+                displayName: Cleanup reference data records
+                inputs:
+                  connectionString: 'Url=$(CeUrl);AuthType=ClientSecret;ClientId=$(CeAppId);ClientSecret=$(CeAppSecret)'
+                  cleanupJsonPath: '$(Pipeline.Workspace)/config/ReferenceDataCleanup.json'
+                  queryDirectory: '$(Pipeline.Workspace)/config'

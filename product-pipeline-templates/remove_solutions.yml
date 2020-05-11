@@ -1,0 +1,15 @@
+parameters:
+  ceSolutions: []
+  ceConnectionString: ''
+
+steps:
+  - task: MSCRMToolInstaller@12
+    displayName: 'Tool Installer'
+
+  - ${{ each solution in parameters.ceSolutions }}:
+
+    - task: MSCRMRemoveSolution@12
+      displayName: 'Remove solution ${{ solution }}'
+      inputs:
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        solutionName: ${{ solution }}

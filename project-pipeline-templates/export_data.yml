@@ -1,0 +1,37 @@
+parameters:
+- name: ceConnectionString
+  type: string
+  default: ''
+- name: exportFileName
+  type: string
+  default: ''
+- name: exportConfigLocation
+  type: string
+  default: ''
+- name: queryDirectory
+  type: string
+  default: ''
+
+steps:
+  - task: HSOToolInstaller@1
+    displayName: Install HSO Toolkit
+
+  - task: HSONNExportCrmData@1
+    displayName: Export Reference Data
+    inputs:
+      connectionString: '${{ parameters.ceConnectionString }}'
+      excelFileLocation: '${{ parameters.exportFileName }}'
+      exportConfigLocation: '${{ parameters.exportConfigLocation }}'
+      queryDirectory: '${{ parameters.queryDirectory }}'
+
+  - task: CopyFiles@2
+    displayName: Copy Build artifacts
+    inputs:
+      SourceFolder: $(Build.SourcesDirectory)\Config
+      Contents: ReferenceData.json
+      TargetFolder: $(Build.ArtifactStagingDirectory)\Config
+
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Artifact - Export file
+    inputs:
+      ArtifactName: export

@@ -1,0 +1,19 @@
+parameters:
+  ceConnectionString: ''
+  ceSolutions: []
+  
+steps:
+
+    # depends on prepare.yml to be run first
+    
+  - ${{ each ceSolution in parameters.ceSolutions }}:
+        
+    - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMApplySolution.MSCRMApplySolution@12
+      condition: ${{ ceSolution.run }}
+      displayName: 'Apply solution upgrade: ${{ ceSolution.name }}'
+      inputs:
+        crmConnectionString: '${{ parameters.connectionString }}'
+        solutionName: '${{ ceSolution.name }}_V$(Postfix)'
+        useAsyncMode: true
+        asyncWaitTimeout: 5000
+        crmConnectionTimeout: 180

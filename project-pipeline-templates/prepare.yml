@@ -1,0 +1,19 @@
+parameters:
+  ceConnectionString: ''
+  publishCustom: false
+
+steps:
+  - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMToolInstaller.MSCRMToolInstaller@12
+    displayName: Power DevOps Tools Installer
+
+  - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMPing.MSCRMPing@12
+    displayName: Validate connection to D365 CE
+    inputs:
+      crmConnectionString: ${{ parameters.ceConnectionString }}
+
+  - ${{ if eq(parameters.publishCustom, true) }}:
+    - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMPublishCustomizations.MSCRMPublishCustomizations@12
+      displayName: Publish Customizations
+      inputs:
+        crmConnectionString: ${{ parameters.ceConnectionString }}
+        crmConnectionTimeout: 600

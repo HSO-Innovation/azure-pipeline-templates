@@ -1,0 +1,17 @@
+parameters:
+  ceConnectionString: ''
+
+steps:
+  - task: MSCRMToolInstaller@12
+    displayName: 'Tool Installer'
+
+  - task: MSCRMPing@12
+    displayName: 'D365 CE Ping'
+    inputs:
+      crmConnectionString: ${{ parameters.ceConnectionString }}
+
+  - task: MSCRMPublishCustomizations@12
+    displayName: 'Publish Customizations'
+    inputs:
+      crmConnectionString: ${{ parameters.ceConnectionString }}
+      crmConnectionTimeout: 600

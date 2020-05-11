@@ -1,0 +1,61 @@
+parameters:
+  solutions: ''
+  productName: ''
+  nuget_feed_id: ''
+
+steps:
+- task: NuGetToolInstaller@0
+  displayName: 'Use NuGet 4.4.1'
+  inputs:
+    versionSpec: 4.4.1
+    
+- task: NuGetCommand@2
+  displayName: 'Restore NuGet packages'
+  inputs:
+    command: 'restore'
+    restoreSolution: '**/*.sln'
+    feedsToUse: 'select'
+    vstsFeed: '${{ parameters.nuget_feed_id }}'
+        
+- task: VSBuild@1
+  displayName: 'Build solutions'
+  inputs:
+    solution: '${{ parameters.solutions }}'
+    platform: '$(platform)'
+    configuration: '$(configuration)'
+    
+- task: VSTest@2
+  displayName: 'Run Unit Tests'
+  inputs:
+    testSelector: 'testAssemblies'
+    testAssemblyVer2: |
+      **\*unittest*.dll
+      !**\*TestAdapter.dll
+      !**\obj\**
+    searchFolder: '$(System.DefaultWorkingDirectory)'
+    
+- task: CopyFiles@2
+  displayName: 'Copy Compiled Plug-ins and Workflow Activities'
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)'
+    Contents: |
+     **\bin\$(configuration)\HDS.Dynamics.${{ parameters.productName }}.Workflows.dll
+     **\bin\$(configuration)\HDS.Dynamics.${{ parameters.productName }}.Workflows.pdb
+     **\bin\$(configuration)\HDS.Dynamics.${{ parameters.productName }}.Plugins.dll
+     **\bin\$(configuration)\HDS.Dynamics.${{ parameters.productName }}.Plugins.pdb
+    TargetFolder: '$(build.artifactstagingdirectory)\Assemblies'
+    flattenFolders: true
+        
+- task: CopyFiles@2
+  displayName: 'Copy SpecFlow test assemblies'
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)\HDS.Dynamics.${{ parameters.productName }}.SpecflowTests\bin\$(configuration)\'
+    Contents: '**'
+    TargetFolder: '$(build.artifactstagingdirectory)\SpecflowTests'
+    flattenFolders: false
+    
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: CI'
+  inputs:
+    PathtoPublish: '$(build.artifactstagingdirectory)'
+    ArtifactName: CI

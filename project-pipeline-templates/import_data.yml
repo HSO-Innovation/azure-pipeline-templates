@@ -1,0 +1,16 @@
+parameters:
+  ceConnectionString: ''
+  importFile: ''
+  importConfigFile: ''
+
+steps:
+
+  - task: HSOToolInstaller@1
+    displayName: Install HSO Toolkit
+  
+  - task: HSONNImportCrmData@1
+    displayName: 'Import Reference Data'
+    inputs:
+      connectionString: '${{ parameters.ceConnectionString }}'
+      excelFileLocation: '${{ parameters.importFile }}'
+      importConfigLocation: '${{ parameters.importConfigFile }}'

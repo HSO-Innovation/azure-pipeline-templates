@@ -1,0 +1,28 @@
+parameters:
+  ceConnectionString: ''
+  exportFileName: ''
+
+steps:
+
+  - task: HSOToolInstaller@1
+    displayName: Install HSO NN DevOps tools
+
+  - task: HSONNExportCrmData@1
+    displayName: Export Reference Data
+    inputs:
+      connectionString: '${{ parameters.ceConnectionString }}'
+      excelFileLocation: '$(Build.ArtifactStagingDirectory)\Export\${{ parameters.exportFileName }}'
+      exportConfigLocation: '$(Build.SourcesDirectory)\Config\ReferenceData.json'
+      queryDirectory: '$(Build.SourcesDirectory)\Config'
+
+  - task: CopyFiles@2
+    displayName: 'Copy Build artifacts'
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)\Config'
+      Contents: 'ReferenceData.json'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)\Config'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: Export file'
+    inputs:
+      ArtifactName: 'export'

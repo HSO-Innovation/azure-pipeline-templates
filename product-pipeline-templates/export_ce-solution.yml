@@ -1,0 +1,91 @@
+parameters:
+  ceConnectionString: ''
+  solutionName: ''
+  tenantid: ''
+  clientId: ''
+  clientSecret: ''
+steps:
+
+  - task: DeleteFiles@1
+    displayName: 'Delete Solution zip files from $(Build.BinariesDirectory)'
+    inputs:
+      SourceFolder: '$(Build.BinariesDirectory)'
+      Contents: '**/*.zip'
+    
+  - task: MSCRMSetVersion@12
+    displayName: 'Set Version - ${{ parameters.solutionName }}'
+    inputs:
+      crmConnectionString: '${{ parameters.ceConnectionString }}'
+      solutionName: '${{ parameters.solutionName }}'
+      versionNumber: '$(Build.BuildNumber)'
+    timeoutInMinutes: 1
+  
+  - task: MSCRMExportSolution@12
+    displayName: 'Export solution: ${{ parameters.solutionName }}'
+    inputs:
+      crmConnectionString: '${{ parameters.ceConnectionString }}'
+      solutionName: '${{ parameters.solutionName }}'
+      exportManaged: true
+      crmConnectionTimeout: 5000 # seconds
+      includeVersionInSolutionFile: false
+      exportAutoNumberingSettings: true
+      exportCalendarSettings: true
+      exportCustomizationSettings: true
+      exportEmailTrackingSettings: true
+      exportExternalApplications: true
+      exportGeneralSettings: true
+      exportIsvConfig: true
+      exportMarketingSettings: true
+      exportOutlookSynchronizationSettings: true
+      exportRelationshipRoles: true
+      exportSales: true
+      outputPath: '$(build.binariesdirectory)'
+    timeoutInMinutes: 180
+
+  - task: MSCRMCheckSolution@12
+    displayName: 'Check solution - ${{ parameters.solutionname }}'
+    inputs:
+      solutionFile: '$(build.binariesdirectory)/${{ parameters.solutionname }}.zip'
+      tenantId: '${{ parameters.tenantid }}'
+      applicationId: '${{ parameters.clientId }}'
+      applicationSecret: '${{ parameters.clientSecret }}'
+      ruleType: 'RuleSet'
+      ruleset: 'Solution Checker'
+      geography: 'Europe'
+    
+  - task: MSCRMCheckerQualityGate@12
+    displayName: 'Validate solution quality - ${{ parameters.solutionname }}'
+    inputs:
+      thresholdAction: 'Warn'    
+      criticalThreshold: '1'
+      highthreshold: '150'
+      mediumthreshold: '1000'
+      lowthreshold: '10000'
+      
+  - task: DeleteFiles@1
+    displayName: 'Delete files from Solutions/${{ parameters.solutionName }}'
+    inputs:
+      SourceFolder: 'Solutions/${{ parameters.solutionName }}'
+      Contents: '**'
+    timeoutInMinutes: 1
+    
+  - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMExtractSolution.MSCRMExtractSolution@12
+    displayName: 'Extract solution $(solutionName)'
+    inputs:
+      unpackedFilesFolder: 'Solutions/${{ parameters.solutionName }}'
+      packageType: Both
+      solutionFile: '$(build.binariesdirectory)/${{ parameters.solutionName }}.zip'
+      localize: false
+      
+  - task: CopyFiles@2
+    displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory) (for artifact)'
+    inputs:
+      SourceFolder: '$(build.binariesdirectory)'
+      Contents: '*_${{ parameters.solutionName }}.zip'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)/${{ parameters.solutionName }}'
+      CleanTargetFolder: true      
+      
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: Solutions'
+    inputs:
+      ArtifactName: Logs     

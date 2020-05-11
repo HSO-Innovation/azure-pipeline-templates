@@ -1,0 +1,16 @@
+parameters:
+  ceConnectionString: ''
+  ceSolutions: []
+  
+steps:
+
+    # depends on prepare.yml to be run first
+    
+  - ${{ each ceSolution in parameters.ceSolutions }}:
+        
+    - task: MSCRMRemoveSolution@12
+      displayName: 'Remove solution: ${{ ceSolution.name }}'
+      condition: ${{ ceSolution.run }}
+      inputs:
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        solutionName: '$(${{ ceSolution.name }})'

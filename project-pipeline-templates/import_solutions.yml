@@ -1,0 +1,58 @@
+parameters:
+  ceConnectionString: ''
+  ceSolutions: []
+  checkDir: true
+  applyUpgrade: false
+
+steps:
+
+    # depends on prepare.yml to be run first
+    
+  - ${{ each ceSolution in parameters.ceSolutions }}:
+        
+    - ${{ if eq(parameters.checkDir, true) }}:
+      - task: HSONNCheckDirectoryExists@1
+        displayName: 'Check if solution must be imported'
+        inputs:
+          directory: '${{ ceSolution.path }}'
+          variableName: 'mustRun'
+
+    - task: MSCRMImportSolution@12
+      continueOnError: false
+      displayName: 'Import solution: ${{ ceSolution.name }}'
+      condition: and(succeeded(), or(eq(variables.mustRun, 'true'), eq(${{ ceSolution.run }}, true))) # 'mustRun' is set by 'checkDir', 'run' is set by parameter by caller
+      inputs:
+        solutionFile: '${{ ceSolution.path }}\${{ ceSolution.name }}.zip'
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        override: true
+        publishWorkflows: true
+        overwriteUnmanagedCustomizations: true
+        asyncWaitTimeout: 5000
+        crmConnectionTimeout: 180
+
+    - ${{ if eq(parameters.applyUpgrade, true) }}:
+      - task: WaelHamze.xrm-ci-framework-build-tasks.MSCRMApplySolution.MSCRMApplySolution@12
+        displayName: 'Apply solution upgrade: ${{ ceSolution.name }}'
+        condition: succeeded()
+        inputs:
+          crmConnectionString: '${{ parameters.ceConnectionString }}'
+          solutionName: '${{ ceSolution.name }}'
+          useAsyncMode: true
+          asyncWaitTimeout: 5000
+          crmConnectionTimeout: 180
+        
+  - task: CopyFiles@2
+    displayName: 'Copy log files'
+    condition: succeeded()
+    inputs:
+      SourceFolder: '$(Pipeline.Workspace)\Solutions'
+      Contents: '**\ImportLog_*.xml'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+            
+  - task: PublishBuildArtifacts@1
+    condition: succeeded()
+    displayName: 'Publish log files'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'logs'
+      publishLocation: 'Container'

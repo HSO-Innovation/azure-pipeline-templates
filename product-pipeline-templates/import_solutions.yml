@@ -1,0 +1,40 @@
+parameters:
+  ceConnectionString: ''
+  
+steps:
+  - task: MSCRMToolInstaller@12
+    displayName: 'Tool Installer'
+    
+  - ${{ each ceSolution in parameters.ceSolutions }}:
+
+    - task: MSCRMImportSolution@12
+      continueOnError: true
+      displayName: 'Import solution ${{ ceSolution.name }}'
+      inputs:
+        solutionFile: '${{ ceSolution.path }}\${{ ceSolution.name }}_managed.zip'
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        override: true
+        publishWorkflows: true
+
+    - task: MSCRMPublishCustomizations@12
+      displayName: 'Publish customizations'
+      condition: succeeded()
+      inputs:
+        crmConnectionString: '${{ parameters.ceConnectionString }}'
+        crmConnectionTimeout: '180'
+        
+  - task: CopyFiles@2
+    displayName: 'Copy log files'
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)'
+      Contents: '**\ImportLog_*.xml'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      condition: always()
+            
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish log files'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'logs'
+      publishLocation: 'Container'
+      condition: always()

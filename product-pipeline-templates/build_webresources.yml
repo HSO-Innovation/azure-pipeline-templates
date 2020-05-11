@@ -1,0 +1,63 @@
+parameters:
+  project: ''
+  npm_config_path: ''
+
+steps:
+
+  - task: PowerShell@2
+    displayName: 'Powershell - Set script version'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Formats JSON in a nicer format than the built-in ConvertTo-Json does.
+        function Format-Json([Parameter(Mandatory, ValueFromPipeline)][String] $json) {
+          $indent = 0;
+          ($json -Split '\n' |
+            % {
+              if ($_ -match '[\}\]]') {
+                # This line contains  ] or }, decrement the indentation level
+                $indent--
+              }
+              $line = (' ' * $indent * 2) + $_.TrimStart().Replace(':  ', ': ')
+              if ($_ -match '[\{\[]') {
+                # This line contains [ or {, increment the indentation level
+                $indent++
+              }
+              $line
+          }) -Join "`n"
+        }
+        
+        $filepath='package.json'
+        $JSON = Get-Content $filepath -Raw -Encoding utf8 | ConvertFrom-Json
+        $JSON.version = "$(build.buildnumber)"
+        
+        $JSON | ConvertTo-Json -Depth 5| Format-Json | Out-File $filepath -Encoding Ascii
+      workingDirectory: '$(system.defaultworkingdirectory)\${{ parameters.project }}' 
+      
+  - task: Npm@1
+    displayName: 'NPM Install'
+    inputs:
+      command: 'install'
+      workingDir: '$(system.defaultworkingdirectory)\${{ parameters.project }}'
+
+  - task: Npm@1
+    displayName: 'NPM Build'
+    inputs:
+      command: 'custom'
+      workingDir: '$(system.defaultworkingdirectory)\${{ parameters.project }}'
+      customCommand: 'run build:prod'
+
+  - task: CopyFiles@2
+    displayName: 'Copy webresources'
+    inputs:
+      SourceFolder: '$(system.defaultworkingdirectory)\${{ parameters.project }}'
+      Contents: |
+       **\hds_\**\*
+      TargetFolder: '$(build.artifactstagingdirectory)\\WebResources'
+      flattenFolders: false
+      
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: CI'
+    inputs:
+      PathtoPublish: '$(build.artifactstagingdirectory)'
+      ArtifactName: CI      
